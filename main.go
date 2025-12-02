@@ -10,6 +10,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"sort"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -416,8 +417,28 @@ func (cfg *apiConfig) getChirpHandler(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(500)
 		return
 	}
+
+	authorID := uuid.Nil
+	authorIDString := r.URL.Query().Get("author_id")
+	if authorIDString != "" {
+		authorID, err = uuid.Parse(authorIDString)
+		if err != nil {
+			respondError(w, http.StatusBadRequest, "Invalid author ID")
+			return
+		}
+	}
+
+	sortDirection := "asc"
+	sortDirectionParam := r.URL.Query().Get("sort")
+	if sortDirectionParam == "desc" {
+		sortDirection = "desc"
+	}
+
 	newChirps := make([]Chirp, 0, len(chirps))
 	for _, chirp := range chirps {
+		if authorID != uuid.Nil && chirp.UserID != authorID {
+			continue
+		}
 		fixedChirp := Chirp{
 			ID:        chirp.ID,
 			CreatedAt: chirp.CreatedAt,
@@ -427,6 +448,14 @@ func (cfg *apiConfig) getChirpHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		newChirps = append(newChirps, fixedChirp)
 	}
+
+	sort.Slice(newChirps, func(i, j int) bool {
+		if sortDirection == "desc" {
+			return newChirps[i].CreatedAt.After(newChirps[j].CreatedAt)
+		}
+		return newChirps[i].CreatedAt.Before(newChirps[j].CreatedAt)
+	})
+
 	respondJSON(w, 200, newChirps)
 }
 
